@@ -155,3 +155,69 @@ def role_required(role):
 @role_required('admin')
 def admin_dashboard():
     return "Welcome to the admin dashboard!"
+from flask_mail import Mail, Message
+
+app.config['MAIL_SERVER'] = 'smtp.your-email-provider.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = 'your-email@example.com'
+app.config['MAIL_PASSWORD'] = 'your-email-password'
+app.config['MAIL_DEFAULT_SENDER'] = 'your-email@example.com'
+
+mail = Mail(app)
+from datetime import datetime, timedelta
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired
+
+@app.route('/reset_password', methods=['GET', 'POST'])
+def reset_password_request():
+    if request.method == 'POST':
+        email = request.form['email']
+        user = User.query.filter_by(email=email).first()
+        if user:
+            token = generate_reset_token(user)
+            user.reset_token = token
+            user.reset_token_expiration = datetime.utcnow() + timedelta(hours=1)
+            db.session.commit()
+
+            # Send email
+            reset_url = url_for('reset_password', token=token, _external=True)
+            msg = Message('Password Reset Request', recipients=[email])
+            msg.body = f"To reset your password, click the following link: {reset_url}"
+            mail.send(msg)
+            flash('A password reset link has been sent to your email.', 'success')
+        else:
+            flash('No account found with that email.', 'danger')
+
+        return redirect(url_for('login'))
+    return render_template('reset_password_request.html')
+
+@app.route('/reset_password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    try:
+        serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+        email = serializer.loads(token, salt='password-reset-salt', max_age=3600)
+    except SignatureExpired:
+        flash('The password reset link is expired.', 'danger')
+        return redirect(url_for('reset_password_request'))
+
+    user = User.query.filter_by(email=email).first()
+    if not user or user.reset_token != token or user.reset_token_expiration < datetime.utcnow():
+        flash('Invalid or expired password reset link.', 'danger')
+        return redirect(url_for('reset_password_request'))
+
+    if request.method == 'POST':
+        password = request.form['password']
+        confirm_password = request.form['confirm_password']
+
+        if password != confirm_password:
+            flash('Passwords do not match.', 'danger')
+            return redirect(url_for('reset_password', token=token))
+
+        user.password = generate_password_hash(password, method='sha256')
+        user.reset_token = None
+        user.reset_token_expiration = None
+        db.session.commit()
+        flash('Your password has been updated. Please log in.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('reset_password.html', token=token)
