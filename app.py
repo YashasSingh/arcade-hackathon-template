@@ -257,3 +257,74 @@ def delete_user(user_id):
         db.session.commit()
         flash('User has been deleted.', 'success')
     return redirect(url_for('admin_dashboard'))
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+
+        if user and check_password_hash(user.password, password):
+            session['user_id'] = user.id
+            session['username'] = user.username
+            app.logger.info(f'User {username} logged in successfully.')
+            flash("Logged in successfully", "success")
+            return redirect(url_for('dashboard'))
+        else:
+            app.logger.warning(f'Failed login attempt for user {username}.')
+            flash("Login failed. Check your username and password.", "danger")
+            return redirect(url_for('login'))
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    app.logger.info(f'User {session["username"]} logged out.')
+    session.clear()
+    flash("You have been logged out.", "success")
+    return redirect(url_for('home'))
+
+@app.route('/admin/user/<int:user_id>/delete', methods=['POST'])
+@login_required
+@role_required('admin')
+def delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.role == 'admin':
+        flash('Cannot delete an admin user.', 'danger')
+    else:
+        app.logger.info(f'Admin {session["username"]} deleted user {user.username}.')
+        db.session.delete(user)
+        db.session.commit()
+        flash('User has been deleted.', 'success')
+    return redirect(url_for('admin_dashboard'))
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+
+        if user and user.account_locked:
+            flash("Your account is locked due to multiple failed login attempts. Please contact support.", "danger")
+            return redirect(url_for('login'))
+
+        if user and check_password_hash(user.password, password):
+            user.failed_logins = 0  # Reset failed attempts on successful login
+            session['user_id'] = user.id
+            session['username'] = user.username
+            app.logger.info(f'User {username} logged in successfully.')
+            flash("Logged in successfully", "success")
+            return redirect(url_for('dashboard'))
+        else:
+            if user:
+                user.failed_logins += 1
+                if user.failed_logins >= 3:
+                    lock_account(user)
+                    flash("Your account has been locked due to multiple failed login attempts.", "danger")
+                db.session.commit()
+            app.logger.warning(f'Failed login attempt for user {username}.')
+            flash("Login failed. Check your username and password.", "danger")
+            return redirect(url_for('login'))
+    
+    return render_template('login.html')
