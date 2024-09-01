@@ -224,3 +224,36 @@ def reset_password(token):
 from flask_wtf.csrf import CSRFProtect
 
 csrf = CSRFProtect(app)
+import logging
+from logging.handlers import RotatingFileHandler
+
+if not app.debug:
+    handler = RotatingFileHandler('logs/flask_template.log', maxBytes=10000, backupCount=1)
+    handler.setLevel(logging.INFO)
+    app.logger.addHandler(handler)
+
+@app.after_request
+def after_request(response):
+    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    log = f"{timestamp} {request.remote_addr} {request.method} {request.scheme} {request.full_path} {response.status}"
+    app.logger.info(log)
+    return response
+@app.route('/admin/dashboard')
+@login_required
+@role_required('admin')
+def admin_dashboard():
+    users = User.query.all()
+    return render_template('admin_dashboard.html', users=users)
+
+@app.route('/admin/user/<int:user_id>/delete', methods=['POST'])
+@login_required
+@role_required('admin')
+def delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.role == 'admin':
+        flash('Cannot delete an admin user.', 'danger')
+    else:
+        db.session.delete(user)
+        db.session.commit()
+        flash('User has been deleted.', 'success')
+    return redirect(url_for('admin_dashboard'))
