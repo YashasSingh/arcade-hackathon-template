@@ -1,5 +1,6 @@
 
 # Flask Web Application
+![image](https://github.com/user-attachments/assets/331a0bc4-c9b3-476f-9c63-8c84214891d3)
 
 ## Overview
 
